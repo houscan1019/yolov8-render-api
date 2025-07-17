@@ -104,9 +104,10 @@ def detect_and_process():
                 filename = f"{uuid.uuid4().hex}.png"
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
-
                 public_url = f"https://yolov8-render-api.onrender.com/processed/{filename}"
                 public_urls.append(public_url)
+print(f"[DEBUG] Saved filename: {filename}")
+print(f"[DEBUG] Public URL: {public_url}")
 
         if not public_urls:
             return jsonify({"message": "No valid objects found."}), 200
