@@ -120,20 +120,22 @@ def detect_and_process():
                 if deskewed is None or deskewed.size == 0:
                     continue
                 
+                # Generate filename with full UUID
                 filename = f"{uuid.uuid4().hex}.png"
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
                 
-                # Generate URL without file extension (matching what logs show)
-                filename_without_ext = filename.replace('.png', '')
+                # Generate URL with full filename (without .png extension)
+                filename_without_ext = filename[:-4]  # Remove .png extension properly
                 public_url = f"https://yolov8-render-api.onrender.com/processed/{filename_without_ext}"
                 public_urls.append(public_url)
                 
                 # Debug logging
-                print(f"[DEBUG] Saved {filename}")
+                print(f"[DEBUG] Generated filename: {filename}")
+                print(f"[DEBUG] Filename without ext: {filename_without_ext}")
+                print(f"[DEBUG] Saved to: {filepath}")
                 print(f"[DEBUG] File exists: {os.path.exists(filepath)}")
                 print(f"[DEBUG] File size: {os.path.getsize(filepath) if os.path.exists(filepath) else 'N/A'} bytes")
-                print(f"[DEBUG] Output directory: {OUTPUT_DIR}")
                 print(f"[DEBUG] Public URL: {public_url}")
         
         if not public_urls:
