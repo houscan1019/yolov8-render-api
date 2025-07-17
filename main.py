@@ -3,8 +3,7 @@ import uuid
 import base64
 import numpy as np
 import cv2
-from flask import Flask, request, jsonify, url_for
-from ultralytics import YOLO
+from flask import Flask, request, jsonify, url_for, send_from_directory
 
 app = Flask(__name__)
 
@@ -58,6 +57,17 @@ def deskew_image(image):
         print(f"[ERROR] Deskewing failed: {e}")
         return image
 
+# Route to serve processed images
+@app.route('/processed/<filename>')
+def serve_processed_file(filename):
+    try:
+        # Add .png extension if not present
+        if not filename.endswith('.png'):
+            filename += '.png'
+        return send_from_directory(OUTPUT_DIR, filename)
+    except:
+        return "File not found", 404
+
 @app.route("/detect-and-process", methods=["POST"])
 def detect_and_process():
     try:
@@ -94,7 +104,9 @@ def detect_and_process():
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
                 
-                public_url = url_for('static', filename=f'processed/{filename}', _external=True)
+                # Generate URL without file extension (matching what logs show)
+                filename_without_ext = filename.replace('.png', '')
+                public_url = f"https://yolov8-render-api.onrender.com/processed/{filename_without_ext}"
                 public_urls.append(public_url)
                 print(f"[DEBUG] Saved {filename}")
                 print(f"[DEBUG] Public URL: {public_url}")
