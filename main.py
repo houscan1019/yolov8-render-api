@@ -4,8 +4,10 @@ import base64
 import numpy as np
 import cv2
 from flask import Flask, request, jsonify, url_for, send_from_directory
+from ultralytics import YOLO
 
-app = Flask(__name__)
+# Create Flask app with explicit static folder configuration
+app = Flask(__name__, static_url_path='/static', static_folder='static')
 
 # Load YOLOv8 model
 model = YOLO("weights.pt")
@@ -57,16 +59,34 @@ def deskew_image(image):
         print(f"[ERROR] Deskewing failed: {e}")
         return image
 
-# Route to serve processed images
+# Route to serve processed images with multiple fallback methods
 @app.route('/processed/<filename>')
 def serve_processed_file(filename):
     try:
-        # Add .png extension if not present
+        # Method 1: Try with .png extension
         if not filename.endswith('.png'):
-            filename += '.png'
-        return send_from_directory(OUTPUT_DIR, filename)
-    except:
-        return "File not found", 404
+            png_filename = filename + '.png'
+            png_path = os.path.join(OUTPUT_DIR, png_filename)
+            if os.path.exists(png_path):
+                return send_from_directory(OUTPUT_DIR, png_filename)
+        
+        # Method 2: Try exact filename
+        exact_path = os.path.join(OUTPUT_DIR, filename)
+        if os.path.exists(exact_path):
+            return send_from_directory(OUTPUT_DIR, filename)
+        
+        # Method 3: Debug - list available files
+        print(f"[DEBUG] File not found: {filename}")
+        print(f"[DEBUG] Looking in directory: {OUTPUT_DIR}")
+        if os.path.exists(OUTPUT_DIR):
+            files = os.listdir(OUTPUT_DIR)
+            print(f"[DEBUG] Available files: {files}")
+        
+        return f"File not found: {filename}", 404
+        
+    except Exception as e:
+        print(f"[ERROR] Error serving file {filename}: {str(e)}")
+        return f"Error serving file: {str(e)}", 500
 
 @app.route("/detect-and-process", methods=["POST"])
 def detect_and_process():
@@ -108,7 +128,12 @@ def detect_and_process():
                 filename_without_ext = filename.replace('.png', '')
                 public_url = f"https://yolov8-render-api.onrender.com/processed/{filename_without_ext}"
                 public_urls.append(public_url)
+                
+                # Debug logging
                 print(f"[DEBUG] Saved {filename}")
+                print(f"[DEBUG] File exists: {os.path.exists(filepath)}")
+                print(f"[DEBUG] File size: {os.path.getsize(filepath) if os.path.exists(filepath) else 'N/A'} bytes")
+                print(f"[DEBUG] Output directory: {OUTPUT_DIR}")
                 print(f"[DEBUG] Public URL: {public_url}")
         
         if not public_urls:
@@ -121,6 +146,23 @@ def detect_and_process():
     except Exception as e:
         print(f"[ERROR] {e}")
         return jsonify({"error": f"Processing error: {str(e)}"}), 500
+
+# Health check route
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "healthy", "output_dir": OUTPUT_DIR})
+
+# Debug route to list files
+@app.route('/debug/files')
+def debug_files():
+    try:
+        if os.path.exists(OUTPUT_DIR):
+            files = os.listdir(OUTPUT_DIR)
+            return jsonify({"files": files, "output_dir": OUTPUT_DIR})
+        else:
+            return jsonify({"error": "Output directory does not exist", "output_dir": OUTPUT_DIR})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
