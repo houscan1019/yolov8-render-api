@@ -12,7 +12,7 @@ app = Flask(__name__)
 model = YOLO("weights.pt")
 
 # Output directory for processed images
-OUTPUT_DIR = "processed"
+OUTPUT_DIR = os.path.join(app.static_folder, 'processed')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def decode_base64_image(image_base64):
@@ -95,11 +95,10 @@ def detect_and_process():
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
 
-                public_url = f"https://yolov8-render-api.onrender.com/processed/{filename}"
-                public_urls.append(public_url)
-                print(f"[DEBUG] Saved {filename}")
-                print(f"[DEBUG] Public URL: {public_url}")
-
+                public_url = url_for('static', filename=f'processed/{filename}', _external=True)
+public_urls.append(public_url)
+print(f"[DEBUG] Saved {filename}")
+print(f"[DEBUG] Public URL: {public_url}")
         if not public_urls:
             return jsonify({"message": "No valid objects found."}), 200
 
