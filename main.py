@@ -105,7 +105,7 @@ def detect_and_process():
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
 
-                public_url = f"https://your-render-app-name.onrender.com/processed/{filename}"
+                public_url = f"https://yolov8-render-api.onrender.com/processed/{filename}"
                 public_urls.append(public_url)
 
         if not public_urls:
