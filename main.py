@@ -115,6 +115,13 @@ def detect_and_process():
     except Exception as e:
         print(f"[ERROR] {e}")
         return jsonify({"error": f"Processing error: {str(e)}"}), 500
+from flask import send_from_directory
+import os
+
+# Serve static processed files
+@app.route('/processed/<path:filename>')
+def serve_processed_file(filename):
+    return send_from_directory(os.path.abspath("processed"), filename)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
