@@ -259,12 +259,20 @@ def detect_and_process():
                     rectangle = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.int32)
                     processed_objects.append(('rectangle_box', rectangle))
             for obj_type, rectangle in processed_objects:
-                cropped, rect_info = crop_using_rectangular_mask(img_np, rectangle)
-                if not cropped: continue
+                crop_result = crop_using_rectangular_mask(img_np, rectangle)
+                if crop_result is None or crop_result[0] is None or crop_result[0].size == 0:
+                    continue
+                cropped, rect_info = crop_result
                 trimmed = trim_border(cropped, border_pixels=10)
+                if trimmed is None or trimmed.size == 0:
+                    trimmed = cropped
                 rotated = smart_rotate_image(trimmed)
+                if rotated is None or rotated.size == 0:
+                    rotated = trimmed
                 angle = rect_info.get('angle', 0)
                 deskewed = deskew_with_known_angle(rotated, angle) if angle else deskew_rectangular_image(rotated)
+                if deskewed is None or deskewed.size == 0:
+                    deskewed = rotated
                 filename = f"{uuid.uuid4().hex}.png"
                 filepath = os.path.join(OUTPUT_DIR, filename)
                 cv2.imwrite(filepath, deskewed)
