@@ -13,7 +13,7 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 def ensure_model_weights():
     """Download model weights if not present"""
     if not os.path.exists("weights.pt"):
-        print("[INFO] Downloading model weights from Google Drive...")
+        print(f"[INFO] Downloading model weights from Google Drive...")
         
         # Your Google Drive file ID
         file_id = "1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD"
@@ -29,8 +29,8 @@ def ensure_model_weights():
             response = session.get(url, stream=True)
             
             # Check if we need to handle the "download anyway" page for large files
-            if 'download_warning' in response.text:
-                print("[INFO] Large file detected, getting confirmation token...")
+            if "download_warning" in response.text:
+                print(f"[INFO] Large file detected, getting confirmation token...")
                 # Parse the confirmation token
                 import re
                 token = re.search(r'name="confirm" value="([^"]+)"', response.text)
@@ -64,18 +64,20 @@ def ensure_model_weights():
                 os.remove("weights.pt")
                 raise Exception(f"Downloaded file too small ({file_size} bytes) - likely an error page")
             
-        except Exception as e:
-            print(f"[ERROR] Failed to download weights: {e}")
-            print("[ERROR] Please verify:")
-            print("[ERROR] 1. Google Drive file is shared with 'Anyone with the link'")
-            print("[ERROR] 2. File ID is correct: 1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD")
-            print("[ERROR] 3. File is accessible at: https://drive.google.com/file/d/1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD/view")
-            
             # Don't raise - let app continue and show meaningful error
             return False
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to download weights: {e}")
+            print(f"[ERROR] Please verify:")
+            print(f"[ERROR] 1. Google Drive file is shared with 'Anyone with the Link'")
+            print(f"[ERROR] 2. File ID is correct: 1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD")
+            print(f"[ERROR] 3. File is accessible at: https://drive.google.com/file/d/1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD/view")
+            
+            return False
     else:
-        print("[INFO] Model weights already present")
-    
+        print(f"[INFO] Model weights already present")
+
     return True
 
 # Download weights before loading model
@@ -84,9 +86,9 @@ weights_downloaded = ensure_model_weights()
 # Load YOLOv8 model
 if weights_downloaded and os.path.exists("weights.pt"):
     model = YOLO("weights.pt")
-    print("[INFO] Model loaded successfully")
+    print(f"[INFO] Model loaded successfully")
 else:
-    print("[ERROR] Cannot load model - weights.pt not available")
+    print(f"[ERROR] Cannot load model - weights.pt not available")
     model = None
 
 # Output directory for processed images
@@ -194,7 +196,7 @@ def get_rectangle_angle(rectangle):
             angle -= 90
         elif angle < -45:
             angle += 90
-            
+        
         print(f"[DEBUG] Rectangle angle: {angle:.2f} degrees")
         return angle
         
@@ -257,7 +259,7 @@ def analyze_photo_composition(image):
         
         # Analyze upper and lower thirds
         upper_third = hsv[:height//3, :]
-        lower_third = hsv[2*height//3:, :]
+        lower_third = hsv[height//3:, :]
         
         # Sky colors (blues) in upper region
         sky_mask_upper = cv2.inRange(upper_third, (100, 50, 50), (130, 255, 255))
@@ -282,7 +284,7 @@ def analyze_photo_composition(image):
             max(0, 0.1 - green_ratio_upper) * 3
         )
         
-        print(f"[DEBUG] Composition - Sky upper: {sky_ratio_upper:.3f}, Green lower: {green_ratio_lower:.3f}, Score: {composition_score:.3f}")
+        print(f"[DEBUG] Composition - Sky upper: {sky_ratio_upper:.3f}, Green lower: {green_ratio_lower:.3f}, Score: {composition_score:.2f}")
         return composition_score
         
     except Exception as e:
@@ -382,9 +384,6 @@ def detect_best_photo_orientation(image):
         return image, 0
 
 def smart_rotate_image(image):
-    """
-    Apply intelligent rotation based on image content
-    """
     try:
         rotated_image, angle = detect_best_photo_orientation(image)
         
@@ -392,7 +391,7 @@ def smart_rotate_image(image):
             print(f"[DEBUG] Image is already correctly oriented")
         else:
             print(f"[DEBUG] Image rotated {angle}° for optimal orientation")
-            
+        
         return rotated_image
         
     except Exception as e:
@@ -546,7 +545,8 @@ def detect_and_process():
             return jsonify({"error": "Model not available - weights.pt could not be loaded"}), 500
         
         data = request.get_json()
-        image_base64 = data.get("image")
+        image_base64 = data.get('image')
+        
         if not image_base64:
             return jsonify({"error": "No image provided."}), 400
         
@@ -593,7 +593,7 @@ def detect_and_process():
                 crop_result = crop_using_rectangular_mask(img_np, rectangle)
                 if crop_result is None or crop_result[0] is None:
                     continue
-                    
+                
                 cropped, rect_info = crop_result
                 
                 # Optional: trim border padding
@@ -604,7 +604,7 @@ def detect_and_process():
                 # Apply intelligent rotation
                 rotated = smart_rotate_image(trimmed)
                 if rotated is None or rotated.size == 0:
-                    continue
+                    rotated = trimmed
                 
                 # Apply rectangular deskewing using angle from rectangle
                 if rect_info and 'angle' in rect_info:
