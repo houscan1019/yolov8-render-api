@@ -13,3 +13,6 @@ routes:
   - type: static
     path: /processed
     dir: processed
+static:
+  - name: processed
+    path: static/processed
