@@ -17,40 +17,77 @@ def ensure_model_weights():
         
         # Your Google Drive file ID
         file_id = "1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD"
+        
+        # Try direct download first
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         
         try:
-            response = requests.get(url, stream=True)
+            print(f"[INFO] Attempting download from: {url}")
+            
+            # Use session to handle redirects and cookies
+            session = requests.Session()
+            response = session.get(url, stream=True)
+            
+            # Check if we need to handle the "download anyway" page for large files
+            if 'download_warning' in response.text:
+                print("[INFO] Large file detected, getting confirmation token...")
+                # Parse the confirmation token
+                import re
+                token = re.search(r'name="confirm" value="([^"]+)"', response.text)
+                if token:
+                    confirm_url = f"https://drive.google.com/uc?export=download&confirm={token.group(1)}&id={file_id}"
+                    response = session.get(confirm_url, stream=True)
+            
             response.raise_for_status()
             
-            # Get file size for progress tracking
-            total_size = int(response.headers.get('content-length', 0))
-            print(f"[INFO] Downloading {total_size // (1024*1024)}MB model file...")
+            # Check if we actually got file content
+            content_type = response.headers.get('content-type', '')
+            if 'text/html' in content_type:
+                raise Exception("Got HTML instead of file - check file permissions")
+            
+            print(f"[INFO] Starting download...")
             
             with open("weights.pt", "wb") as f:
                 downloaded = 0
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=32768):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if total_size > 0:
-                            percent = (downloaded / total_size) * 100
-                            print(f"[INFO] Download progress: {percent:.1f}%")
+                        if downloaded % (1024*1024) == 0:  # Every MB
+                            print(f"[INFO] Downloaded {downloaded // (1024*1024)}MB...")
             
-            print("[INFO] Model weights downloaded successfully")
+            file_size = os.path.getsize("weights.pt")
+            print(f"[INFO] Model weights downloaded successfully ({file_size // (1024*1024)}MB)")
+            
+            # Verify it's actually a model file (should be > 10MB)
+            if file_size < 10 * 1024 * 1024:
+                os.remove("weights.pt")
+                raise Exception(f"Downloaded file too small ({file_size} bytes) - likely an error page")
             
         except Exception as e:
             print(f"[ERROR] Failed to download weights: {e}")
-            print("[ERROR] Please check your Google Drive link permissions")
-            raise
+            print("[ERROR] Please verify:")
+            print("[ERROR] 1. Google Drive file is shared with 'Anyone with the link'")
+            print("[ERROR] 2. File ID is correct: 1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD")
+            print("[ERROR] 3. File is accessible at: https://drive.google.com/file/d/1OyRytYZklcxCcwIlhjLiFft2ua2CgPXD/view")
+            
+            # Don't raise - let app continue and show meaningful error
+            return False
     else:
         print("[INFO] Model weights already present")
+    
+    return True
 
 # Download weights before loading model
-ensure_model_weights()
+weights_downloaded = ensure_model_weights()
 
 # Load YOLOv8 model
-model = YOLO("weights.pt")
+if weights_downloaded and os.path.exists("weights.pt"):
+    model = YOLO("weights.pt")
+    print("[INFO] Model loaded successfully")
+else:
+    print("[ERROR] Cannot load model - weights.pt not available")
+    model = None
 
 # Output directory for processed images
 OUTPUT_DIR = os.path.join(app.static_folder, 'processed')
@@ -504,6 +541,10 @@ def serve_processed_file(filename):
 @app.route("/detect-and-process", methods=["POST"])
 def detect_and_process():
     try:
+        # Check if model is available
+        if model is None:
+            return jsonify({"error": "Model not available - weights.pt could not be loaded"}), 500
+        
         data = request.get_json()
         image_base64 = data.get("image")
         if not image_base64:
