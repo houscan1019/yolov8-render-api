@@ -1,1 +1,11 @@
+[phases.setup]
+aptPkgs = ['libglib2.0-0', 'libsm6', 'libxext6', 'libxrender1', 'libgomp1']
 
+[variables]
+OPENCV_IO_ENABLE_OPENEXR = '0'
+QT_QPA_PLATFORM = 'offscreen'
+MPLBACKEND = 'Agg'
+PYTHONUNBUFFERED = '1'
+
+[start]
+cmd = 'python main.py'
