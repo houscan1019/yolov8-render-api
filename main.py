@@ -26,7 +26,8 @@ def download_model_from_release():
             print("📥 Downloading YOLO model from GitHub release...")
             model_status = "downloading"
             
-            model_url = "https://github.com/houscani019/yolov8-render-api/releases/download/v1.0/weights.pt"
+            # FIXED URL - correct GitHub username (houscan1019, not houscani019)
+            model_url = "https://github.com/houscan1019/yolov8-render-api/releases/download/v1.0/weights.pt"
             urllib.request.urlretrieve(model_url, model_path)
             print("✅ YOLO model downloaded successfully")
             model_status = "downloaded"
@@ -76,11 +77,12 @@ else:
 @app.route('/')
 def home():
     return jsonify({
-        "message": "Railway YOLO API", 
+        "message": "Railway YOLO API - Custom Model", 
         "status": "running",
         "port": PORT,
         "model_status": model_status,
-        "model_loaded": model is not None
+        "model_loaded": model is not None,
+        "model_source": "Your custom trained model"
     }), 200
 
 @app.route('/health')
@@ -103,12 +105,14 @@ def model_info():
         "model_loaded": model is not None,
         "model_status": model_status,
         "weights_file_exists": os.path.exists('weights.pt'),
-        "weights_file_size": os.path.getsize('weights.pt') if os.path.exists('weights.pt') else 0
+        "weights_file_size": os.path.getsize('weights.pt') if os.path.exists('weights.pt') else 0,
+        "model_source": "Custom trained YOLOv8 instance segmentation",
+        "github_release": "v1.0"
     }), 200
 
 @app.route('/process-image', methods=['POST'])
 def process_image():
-    """Basic image processing endpoint"""
+    """Image processing endpoint with your custom model"""
     try:
         if not model:
             return jsonify({
@@ -120,7 +124,7 @@ def process_image():
         if not data or 'image' not in data:
             return jsonify({"error": "No image data provided"}), 400
         
-        # Basic image validation
+        # Decode and validate image
         try:
             image_data = base64.b64decode(data['image'])
             image = Image.open(io.BytesIO(image_data))
@@ -128,16 +132,52 @@ def process_image():
         except Exception as e:
             return jsonify({"error": f"Invalid image data: {str(e)}"}), 400
         
-        # Simple response for now (no actual processing yet)
+        # Convert RGB to BGR for OpenCV processing
+        if len(image_np.shape) == 3 and image_np.shape[2] == 3:
+            import cv2
+            image_cv = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+        else:
+            image_cv = image_np
+        
+        print(f"Processing image with shape: {image_cv.shape}")
+        
+        # Run YOLO inference with your custom model
+        results = model(image_cv, conf=0.5)
+        
+        # Extract detection information
+        detection_count = 0
+        confidence_scores = []
+        has_masks = False
+        
+        if results and len(results) > 0:
+            result = results[0]
+            
+            # Check for instance segmentation masks
+            if hasattr(result, 'masks') and result.masks is not None:
+                has_masks = True
+                detection_count = len(result.masks)
+                if hasattr(result, 'boxes') and result.boxes is not None:
+                    confidence_scores = [float(conf) for conf in result.boxes.conf.cpu().numpy()]
+            
+            # Fallback to bounding boxes
+            elif hasattr(result, 'boxes') and result.boxes is not None:
+                detection_count = len(result.boxes)
+                confidence_scores = [float(conf) for conf in result.boxes.conf.cpu().numpy()]
+        
         return jsonify({
             "success": True,
-            "message": "Image received successfully",
+            "message": "Image processed with your custom YOLO model",
+            "detections": detection_count,
+            "confidence_scores": confidence_scores,
+            "has_instance_segmentation": has_masks,
+            "model_type": "Your custom YOLOv8 instance segmentation",
             "image_shape": image_np.shape,
-            "model_status": model_status,
-            "note": "Full processing will be added next"
+            "processed_shape": image_cv.shape,
+            "note": "Custom model from GitHub release v1.0"
         }), 200
         
     except Exception as e:
+        print(f"Error in process_image: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
