@@ -8,3 +8,4 @@ torch
 torchvision
 gunicorn
 pyyaml
+# Force rebuild for opencv-headless fix
