@@ -1,16 +1,20 @@
 FROM python:3.9-slim
 
-# Install system dependencies required for OpenCV headless
+# Update package list and install system dependencies
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
     libgthread-2.0-0 \
-    libavcodec58 \
-    libavformat58 \
-    libswscale5 \
+    libfontconfig1 \
+    libfreetype6 \
+    libpng16-16 \
+    libjpeg62-turbo \
+    libwebp6 \
+    libtiff5 \
+    libopenjp2-7 \
     wget \
     curl \
     && apt-get clean \
@@ -21,6 +25,7 @@ ENV OPENCV_IO_ENABLE_OPENEXR=0
 ENV QT_QPA_PLATFORM=offscreen
 ENV MPLBACKEND=Agg
 ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
@@ -38,7 +43,7 @@ COPY . .
 RUN mkdir -p static/processed
 
 # Expose port (Railway will set PORT environment variable)
-EXPOSE $PORT
+EXPOSE 8000
 
 # Run the application
 CMD ["python", "main.py"]
