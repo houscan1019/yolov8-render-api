@@ -1,28 +1,8 @@
-[phases.setup]
-aptPkgs = [
-    'libglib2.0-0',
-    'libsm6', 
-    'libxext6', 
-    'libxrender1', 
-    'libgomp1',
-    'libglib2.0-dev',
-    'libgtk-3-dev',
-    'libavcodec58',
-    'libavformat58',
-    'libswscale5',
-    'libpng16-16',
-    'libjpeg62-turbo',
-    'libtiff5',
-    'libwebp6',
-    'ffmpeg'
-]
-
 [variables]
 OPENCV_IO_ENABLE_OPENEXR = '0'
 QT_QPA_PLATFORM = 'offscreen'
 MPLBACKEND = 'Agg'
 PYTHONUNBUFFERED = '1'
-DEBIAN_FRONTEND = 'noninteractive'
 
 [start]
 cmd = 'python main.py'
