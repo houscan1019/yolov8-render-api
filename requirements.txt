@@ -1,8 +1,8 @@
-Flask==3.0.0
-gunicorn==21.2.0
+Flask==2.3.3
+gunicorn==20.1.0
 requests==2.31.0
-numpy==1.24.4
-Pillow==10.0.1
-opencv-python-headless==4.8.1.78
-ultralytics==8.0.196
-Werkzeug==3.0.1
+numpy==1.21.6
+Pillow==9.5.0
+opencv-python-headless==4.7.1.72
+ultralytics==8.0.100
+Werkzeug==2.3.7
