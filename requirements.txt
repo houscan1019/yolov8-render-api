@@ -1,11 +1,21 @@
-ultralytics
-opencv-python-headless
-flask
-flask-cors
-pillow
-numpy
-torch
-torchvision
-gunicorn
-pyyaml
-# Force rebuild for opencv-headless fix
+# Explicit OpenCV headless installation
+opencv-python-headless==4.8.1.78
+
+# Core ML libraries
+ultralytics==8.0.196
+torch==2.0.1
+torchvision==0.15.2
+
+# Image processing
+pillow==10.0.1
+numpy==1.24.4
+
+# Web framework
+flask==2.3.3
+flask-cors==4.0.0
+
+# Server
+gunicorn==21.2.0
+
+# Config
+pyyaml==6.0.1
