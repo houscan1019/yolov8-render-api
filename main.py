@@ -21,6 +21,9 @@ app = Flask(__name__)
 # Railway port configuration
 PORT = int(os.environ.get('PORT', 5000))
 
+# Version identifier
+APP_VERSION = "Docker-v2.0"
+
 # Global model variable
 model = None
 model_status = "not_loaded"
@@ -55,44 +58,44 @@ def load_yolo_model():
     global model, model_status
     
     try:
-        print("🔄 Loading YOLO model with headless environment...")
+        print("🔄 Loading YOLO model with Docker headless environment...")
         model_status = "loading"
         
         # Import cv2 first with explicit headless setup
-        print("🔧 Setting up headless OpenCV environment...")
+        print("🔧 Setting up Docker headless OpenCV environment...")
         
         try:
             import cv2
-            print(f"✅ OpenCV {cv2.__version__} imported successfully (headless)")
+            print(f"✅ OpenCV {cv2.__version__} imported successfully (Docker headless)")
         except Exception as cv2_error:
-            print(f"❌ OpenCV import failed: {cv2_error}")
-            model_status = f"opencv_error: {str(cv2_error)}"
+            print(f"❌ OpenCV import failed in Docker: {cv2_error}")
+            model_status = f"docker_opencv_error: {str(cv2_error)}"
             return False
         
         # Now import ultralytics
-        print("🔧 Importing ultralytics...")
+        print("🔧 Importing ultralytics in Docker environment...")
         try:
             from ultralytics import YOLO
-            print("✅ Ultralytics imported successfully")
+            print("✅ Ultralytics imported successfully in Docker")
         except Exception as ultralytics_error:
-            print(f"❌ Ultralytics import failed: {ultralytics_error}")
-            model_status = f"ultralytics_error: {str(ultralytics_error)}"
+            print(f"❌ Ultralytics import failed in Docker: {ultralytics_error}")
+            model_status = f"docker_ultralytics_error: {str(ultralytics_error)}"
             return False
         
         # Load the model
-        print("🔧 Loading YOLO model from weights.pt...")
+        print("🔧 Loading YOLO model from weights.pt in Docker...")
         model = YOLO('weights.pt')
-        print("✅ YOLO model loaded successfully")
-        model_status = "loaded"
+        print("✅ YOLO model loaded successfully in Docker environment")
+        model_status = "loaded_docker"
         return True
         
     except Exception as e:
-        print(f"❌ Error in load_yolo_model: {e}")
-        model_status = f"general_error: {str(e)}"
+        print(f"❌ Error in load_yolo_model (Docker): {e}")
+        model_status = f"docker_general_error: {str(e)}"
         return False
 
 # Initialize model on startup
-print("🚀 Starting model initialization with headless environment...")
+print(f"🚀 Starting model initialization with Docker environment - {APP_VERSION}...")
 if download_model_from_release():
     load_yolo_model()
 else:
@@ -101,12 +104,13 @@ else:
 @app.route('/')
 def home():
     return jsonify({
-        "message": "Railway YOLO API - Headless Environment", 
+        "message": "Railway YOLO API - Docker Deployment", 
         "status": "running",
         "port": PORT,
         "model_status": model_status,
         "model_loaded": model is not None,
-        "environment": "headless_forced"
+        "app_version": APP_VERSION,
+        "environment": "docker_headless"
     }), 200
 
 @app.route('/health')
@@ -115,21 +119,23 @@ def health_check():
         "status": "healthy", 
         "service": "document-processor",
         "model_status": model_status,
-        "model_ready": model is not None
+        "model_ready": model is not None,
+        "app_version": APP_VERSION
     }), 200
 
 @app.route('/test')
 def test():
-    return f"✅ Railway YOLO API (Headless) - Model Status: {model_status}"
+    return f"✅ Railway YOLO API ({APP_VERSION}) - Model Status: {model_status}"
 
 @app.route('/debug-env')
 def debug_env():
-    """Debug endpoint to check environment variables"""
+    """Debug endpoint to check Docker environment"""
     env_vars = {
         'OPENCV_IO_ENABLE_OPENEXR': os.environ.get('OPENCV_IO_ENABLE_OPENEXR'),
         'QT_QPA_PLATFORM': os.environ.get('QT_QPA_PLATFORM'),
         'MPLBACKEND': os.environ.get('MPLBACKEND'),
         'DISPLAY': os.environ.get('DISPLAY'),
+        'PYTHONUNBUFFERED': os.environ.get('PYTHONUNBUFFERED'),
     }
     
     # Test cv2 import
@@ -141,6 +147,8 @@ def debug_env():
         cv2_test = f"failed: {str(e)}"
     
     return jsonify({
+        "app_version": APP_VERSION,
+        "environment": "docker",
         "environment_variables": env_vars,
         "cv2_import_test": cv2_test,
         "python_version": sys.version
@@ -150,13 +158,15 @@ def debug_env():
 def model_info():
     """Detailed model information"""
     return jsonify({
+        "app_version": APP_VERSION,
+        "deployment_type": "docker",
         "model_loaded": model is not None,
         "model_status": model_status,
         "weights_file_exists": os.path.exists('weights.pt'),
         "weights_file_size": os.path.getsize('weights.pt') if os.path.exists('weights.pt') else 0,
         "model_source": "Custom trained YOLOv8 instance segmentation",
         "github_release": "v1.0",
-        "environment_type": "forced_headless"
+        "environment_type": "docker_headless"
     }), 200
 
 @app.route('/process-image', methods=['POST'])
@@ -166,7 +176,8 @@ def process_image():
         if not model:
             return jsonify({
                 "error": "YOLO model not loaded",
-                "model_status": model_status
+                "model_status": model_status,
+                "app_version": APP_VERSION
             }), 500
             
         data = request.get_json()
@@ -212,12 +223,13 @@ def process_image():
         
         return jsonify({
             "success": True,
-            "message": "Image processed with custom YOLO model (headless)",
+            "message": "Image processed with custom YOLO model (Docker)",
             "detections": detection_count,
             "confidence_scores": confidence_scores,
             "has_instance_segmentation": has_masks,
             "model_type": "Custom YOLOv8 instance segmentation",
-            "image_shape": image_np.shape
+            "image_shape": image_np.shape,
+            "app_version": APP_VERSION
         }), 200
         
     except Exception as e:
@@ -227,5 +239,5 @@ def process_image():
 if __name__ == '__main__':
     print(f"🚀 Starting Flask app on port {PORT}")
     print(f"🤖 Model status: {model_status}")
-    print(f"🖥️ Environment: Forced headless mode")
+    print(f"🐳 Environment: Docker headless mode - {APP_VERSION}")
     app.run(host='0.0.0.0', port=PORT, debug=False)
