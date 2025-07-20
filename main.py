@@ -6,112 +6,40 @@ from flask import Flask, request, jsonify, send_from_directory
 from ultralytics import YOLO
 from PIL import Image
 from werkzeug.utils import secure_filename
+import requests
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'static/processed'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Load model with TTA (Test-Time Augmentation) for better accuracy
-model = YOLO("weights.pt")
-
-def detect_faces_for_orientation(image):
-    """Detect faces to determine photo orientation"""
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    
-    if len(faces) > 0:
-        # Faces detected - likely a photo that shouldn't be rotated
-        print("[INFO] Faces detected - treating as oriented photo")
-        return True
-    return False
-
-def detect_horizon_lines(image):
-    """Detect horizon lines for natural photo orientation"""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-    
-    # Focus on horizontal lines in the middle third of the image
-    h, w = gray.shape
-    roi_edges = edges[h//3:2*h//3, :]
-    
-    lines = cv2.HoughLines(roi_edges, 1, np.pi/180, int(w*0.3))
-    
-    if lines is not None:
-        horizontal_lines = []
-        for rho, theta in lines[:, 0]:
-            angle = abs((theta - np.pi/2) * 180 / np.pi)
-            if angle < 10:  # Nearly horizontal lines
-                horizontal_lines.append(theta)
-        
-        if len(horizontal_lines) > 0:
-            print(f"[INFO] Found {len(horizontal_lines)} potential horizon lines")
-            return True
-    
-    return False
-
-def smart_orientation_check(image):
-    """Determine if image should be rotated based on AI analysis"""
-    has_faces = detect_faces_for_orientation(image)
-    has_horizon = detect_horizon_lines(image)
-    
-    # If faces or strong horizon detected, be conservative with rotation
-    if has_faces or has_horizon:
+# Download weights if they don't exist (backup method)
+def ensure_weights_exist():
+    if not os.path.exists("weights.pt"):
+        print("[WARNING] weights.pt not found. Please upload it manually to Render.")
+        # You can add a download URL here if you put weights.pt in GitHub releases
         return False
-    
     return True
 
-def enhance_image_preprocessing(image):
-    """Apply preprocessing to improve detection accuracy"""
-    # Convert to LAB color space and apply CLAHE to L channel
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    lab[:,:,0] = clahe.apply(lab[:,:,0])
-    enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    
-    # Slight sharpening
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    sharpened = cv2.filter2D(enhanced, -1, kernel)
-    
-    # Blend original and enhanced (70% enhanced, 30% original)
-    result = cv2.addWeighted(sharpened, 0.7, image, 0.3, 0)
-    
-    return result
+# Load model
+try:
+    if ensure_weights_exist():
+        model = YOLO("weights.pt")
+        print("[SUCCESS] Model loaded successfully")
+    else:
+        model = None
+        print("[ERROR] Cannot load model - weights.pt missing")
+except Exception as e:
+    model = None
+    print(f"[ERROR] Failed to load model: {e}")
 
-def get_optimal_rectangle(contour):
-    """Get best rectangle fit using multiple approaches"""
-    # Approach 1: minAreaRect
-    rect1 = cv2.minAreaRect(contour)
-    
-    # Approach 2: Convex hull + minAreaRect for cleaner edges
-    hull = cv2.convexHull(contour)
-    rect2 = cv2.minAreaRect(hull)
-    
-    # Calculate area efficiency for both
-    contour_area = cv2.contourArea(contour)
-    area1 = rect1[1][0] * rect1[1][1]
-    area2 = rect2[1][0] * rect2[1][1]
-    
-    efficiency1 = contour_area / area1 if area1 > 0 else 0
-    efficiency2 = contour_area / area2 if area2 > 0 else 0
-    
-    # Choose the more efficient rectangle
-    chosen_rect = rect1 if efficiency1 >= efficiency2 else rect2
-    print(f"[DEBUG] Rectangle efficiency: {max(efficiency1, efficiency2):.3f}")
-    
-    return chosen_rect
-
-def deskew_with_known_angle(image, angle, is_smart_rotation=False):
-    """Deskew with angle, considering smart rotation context"""
-    # More conservative threshold for photos with faces/horizons
-    threshold = 1.0 if is_smart_rotation else 0.2
-    
-    if abs(angle) < threshold:
+def deskew_with_known_angle(image, angle):
+    """Rotate image by specified angle"""
+    if abs(angle) < 0.5:  # Skip very small rotations
         print(f"[DEBUG] Angle too small ({angle:.2f}°), skipping deskew")
         return image
     
-    # Quantize angle for stability
-    angle = round(angle * 4) / 4.0
+    # Round angle for stability
+    angle = round(angle * 2) / 2.0
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
     
@@ -120,10 +48,12 @@ def deskew_with_known_angle(image, angle, is_smart_rotation=False):
     new_w = int(h * sin_a + w * cos_a)
     new_h = int(h * cos_a + w * sin_a)
     
+    # Create rotation matrix
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     M[0, 2] += (new_w - w) / 2
     M[1, 2] += (new_h - h) / 2
     
+    # Apply rotation
     deskewed = cv2.warpAffine(image, M, (new_w, new_h), 
                              flags=cv2.INTER_CUBIC, 
                              borderMode=cv2.BORDER_REPLICATE)
@@ -131,9 +61,29 @@ def deskew_with_known_angle(image, angle, is_smart_rotation=False):
     print(f"[INFO] Deskewed image with angle {angle:.2f}°")
     return deskewed
 
-def crop_with_padding_removal(image, points, padding_px=15):
+def get_rectangle_from_points(points):
+    """Get the best rectangle from polygon points"""
+    # Convert to numpy array
+    contour = np.array(points, dtype=np.float32)
+    
+    # Get minimum area rectangle
+    rect = cv2.minAreaRect(contour)
+    
+    # Extract angle
+    angle = rect[-1]
+    
+    # Normalize angle to [-45, 45] range
+    if angle < -45:
+        angle += 90
+    elif angle > 45:
+        angle -= 90
+    
+    print(f"[DEBUG] Rectangle angle: {angle:.2f}°")
+    return angle
+
+def crop_with_padding_removal(image, points, padding_px=12):
     """Crop image and remove annotation padding"""
-    x, y, w, h = cv2.boundingRect(points)
+    x, y, w, h = cv2.boundingRect(np.array(points, dtype=np.int32))
     
     # Remove padding from bounds
     x = max(0, x + padding_px)
@@ -147,22 +97,15 @@ def crop_with_padding_removal(image, points, padding_px=15):
     w = min(w, image.shape[1] - x)
     h = min(h, image.shape[0] - y)
     
-    return image[y:y+h, x:x+w]
-
-def apply_test_time_augmentation(image):
-    """Apply TTA for more robust predictions"""
-    # Original prediction
-    results_original = model.predict(image, save=False, conf=0.4, verbose=False)
-    
-    # Horizontally flipped prediction
-    image_flipped = cv2.flip(image, 1)
-    results_flipped = model.predict(image_flipped, save=False, conf=0.4, verbose=False)
-    
-    # Combine results (simplified - using original for now, but you could ensemble)
-    return results_original
+    cropped = image[y:y+h, x:x+w]
+    print(f"[DEBUG] Cropped to size: {w}x{h}")
+    return cropped
 
 @app.route('/detect-and-process', methods=['POST'])
 def detect_and_process():
+    if model is None:
+        return jsonify({'error': 'Model not loaded - weights.pt missing'}), 500
+        
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
@@ -170,27 +113,22 @@ def detect_and_process():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(UPLOAD_FOLDER, f"raw_{filename}")
-    file.save(file_path)
-
     try:
-        # Load and enhance image
+        # Save uploaded file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(UPLOAD_FOLDER, f"raw_{filename}")
+        file.save(file_path)
+        
+        # Load image
         image = cv2.imread(file_path)
         if image is None:
             return jsonify({'error': 'Invalid image file'}), 400
         
         print(f"[INFO] Processing image: {filename}")
         
-        # Apply preprocessing enhancement
-        enhanced_image = enhance_image_preprocessing(image)
+        # Run prediction
+        results = model.predict(image, save=False, conf=0.4, verbose=False)
         
-        # Smart orientation analysis
-        allow_smart_rotation = smart_orientation_check(image)
-        
-        # Run prediction with TTA
-        results = apply_test_time_augmentation(enhanced_image)
-
         processed_files = []
         detection_count = 0
         
@@ -202,38 +140,25 @@ def detect_and_process():
                     detection_count += 1
                     print(f"[DEBUG] Processing detection {detection_count}")
                     
-                    # Create mask
-                    mask = np.zeros(image.shape[:2], dtype=np.uint8)
-                    points = np.array([seg], dtype=np.int32)
-                    cv2.fillPoly(mask, points, 255)
-
-                    # Crop with padding removal
-                    cropped = crop_with_padding_removal(image, points[0])
+                    # Convert segment points to proper format
+                    points = seg.reshape(-1, 2)
+                    
+                    # Crop image using polygon points
+                    cropped = crop_with_padding_removal(image, points)
                     
                     if cropped.size == 0:
                         print(f"[WARN] Empty crop for detection {detection_count}, skipping")
                         continue
-
-                    # Apply deskewing based on detection quality
-                    if len(seg) >= 4:
-                        # Use optimal rectangle detection
-                        rect = get_optimal_rectangle(np.array(seg, dtype=np.float32))
-                        angle = rect[-1]
-                        
-                        # Normalize angle to [-45, 45] range
-                        if angle < -45:
-                            angle += 90
-                        elif angle > 45:
-                            angle -= 90
-                            
-                        cropped = deskew_with_known_angle(cropped, angle, allow_smart_rotation)
+                    
+                    # Get rotation angle from polygon
+                    if len(points) >= 4:
+                        angle = get_rectangle_from_points(points)
+                        cropped = deskew_with_known_angle(cropped, angle)
                     else:
-                        print(f"[WARN] Insufficient points for rectangle detection ({len(seg)} points)")
-                        # Fallback to basic processing
-                        continue
-
+                        print(f"[WARN] Not enough points for angle calculation ({len(points)} points)")
+                    
                     # Save processed image
-                    out_filename = f"processed_{uuid.uuid4().hex[:8]}.jpg"
+                    out_filename = f"doc_{uuid.uuid4().hex[:8]}.jpg"
                     out_path = os.path.join(UPLOAD_FOLDER, out_filename)
                     
                     # Save with high quality
@@ -244,33 +169,33 @@ def detect_and_process():
                     print(f"[INFO] Saved: {url}")
             else:
                 print("[WARN] No masks detected in results")
-
+        
         # Cleanup raw file
         if os.path.exists(file_path):
             os.remove(file_path)
-
+        
         if not processed_files:
             return jsonify({
                 'message': 'No documents detected in image',
                 'processed_files': []
             }), 200
-
+        
         print(f"[SUCCESS] Processed {len(processed_files)} documents")
         return jsonify({
             'processed_files': processed_files,
             'detection_count': len(processed_files)
         })
-
+        
     except Exception as e:
         print(f"[ERROR] Processing failed: {str(e)}")
         # Cleanup on error
-        if os.path.exists(file_path):
+        if 'file_path' in locals() and os.path.exists(file_path):
             os.remove(file_path)
         return jsonify({'error': f'Processing failed: {str(e)}'}), 500
 
 @app.route('/processed/<path:filename>')
 def serve_processed(filename):
-    """Serve processed files with proper headers"""
+    """Serve processed files"""
     try:
         return send_from_directory(UPLOAD_FOLDER, filename, 
                                  mimetype='image/jpeg',
@@ -281,10 +206,32 @@ def serve_processed(filename):
 @app.route('/health')
 def health_check():
     """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'model_loaded': model is not None})
+    return jsonify({
+        'status': 'healthy', 
+        'model_loaded': model is not None,
+        'weights_exist': os.path.exists('weights.pt')
+    })
+
+@app.route('/')
+def home():
+    """Simple home page"""
+    return jsonify({
+        'message': 'Document Processing API is running',
+        'endpoints': {
+            'detect': '/detect-and-process (POST)',
+            'health': '/health (GET)',
+            'files': '/processed/<filename> (GET)'
+        }
+    })
 
 if __name__ == '__main__':
-    print("[INFO] Starting Flask application...")
+    print("[INFO] Starting Document Processing API...")
     print(f"[INFO] Model loaded: {model is not None}")
     print(f"[INFO] Upload folder: {UPLOAD_FOLDER}")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    if model is None:
+        print("[WARNING] Upload weights.pt to Render manually!")
+    
+    # Use PORT environment variable or default to 5000
+    port = int(os.environ.get('PORT', 5000))
+    print(f"[INFO] Starting on port {port}")
+    app.run(debug=False, host='0.0.0.0', port=port)
