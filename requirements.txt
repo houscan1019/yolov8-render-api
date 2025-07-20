@@ -1,4 +1,10 @@
-Flask==3.0.0
-requests==2.31.0
-ultralytics==8.0.50
-torch==2.0.1
+ultralytics
+opencv-python-headless
+flask
+flask-cors
+pillow
+numpy
+torch
+torchvision
+gunicorn
+pyyaml
