@@ -1,3 +1,11 @@
-git add railway.toml
-git commit -m "Add Railway configuration"
-git push
+[build]
+builder = "nixpacks"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[build.env]
+NIXPACKS_PYTHON_VERSION = "3.9"
